@@ -1,0 +1,16 @@
+{
+  "name": "Saghro Trek",
+  "short_name": "Saghro Trek",
+  "description": "An offline trail-running game across the Jbel Saghro.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1d121a",
+  "theme_color": "#2a1a24",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
