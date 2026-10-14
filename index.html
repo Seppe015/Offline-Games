@@ -168,6 +168,11 @@ function ensureAudio() {
   if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; } }
   if (actx && actx.state === 'suspended') actx.resume();
 }
+let sfxGain = null;
+function sfxOut() {
+  if (!sfxGain) { sfxGain = actx.createGain(); sfxGain.gain.value = 1.8; sfxGain.connect(actx.destination); }
+  return sfxGain;
+}
 function tone(freq, dur, type = 'square', vol = 0.06, slideTo = 0, delay = 0) {
   if (!actx || muted) return;
   const t0 = actx.currentTime + delay;
@@ -176,7 +181,7 @@ function tone(freq, dur, type = 'square', vol = 0.06, slideTo = 0, delay = 0) {
   if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
   gn.gain.setValueAtTime(vol, t0);
   gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  o.connect(gn).connect(actx.destination);
+  o.connect(gn).connect(sfxOut());
   o.start(t0); o.stop(t0 + dur + 0.02);
 }
 function noise(dur, vol = 0.12) {
@@ -187,7 +192,7 @@ function noise(dur, vol = 0.12) {
   for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
   const src = actx.createBufferSource(), f = actx.createBiquadFilter(), gn = actx.createGain();
   src.buffer = buf; f.type = 'lowpass'; f.frequency.value = 900; gn.gain.value = vol;
-  src.connect(f).connect(gn).connect(actx.destination); src.start();
+  src.connect(f).connect(gn).connect(sfxOut()); src.start();
 }
 const sfx = {
   jump()  { tone(330, 0.12, 'square', 0.04, 620); },
@@ -202,6 +207,149 @@ const sfx = {
   over()  { [440, 370, 311, 220].forEach((f, i) => tone(f, 0.25, 'triangle', 0.06, 0, i * 0.15)); },
   start() { tone(440, 0.1, 'triangle', 0.05, 880); },
 };
+
+// ---------------------------------------------------------------- music
+// Procedural Gnawa / Amazigh-flavoured groove: a gimbri bass riff, bendir and
+// darbuka drums, qraqeb castanets in a triplet shuffle and an oud-like lead.
+// Layers join as the trek goes on; nights switch to the hijaz mode and a
+// breathier lead. Twelve triplet steps per bar.
+const music = { on: store.get('saghro.music', true) !== false, gain: null, level: -1, nextT: 0, step: 0, phrase: null, noise: null };
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+const SCALE_DAY = [0, 3, 5, 7, 10];            // D F G A C — Amazigh pentatonic
+const SCALE_NIGHT = [0, 1, 4, 5, 7, 8, 10];    // D Eb F# G A Bb C — hijaz
+const RIFFS = [
+  { 0: 38, 2: 38, 3: 41, 6: 43, 8: 41, 9: 38, 11: 36 },
+  { 0: 38, 2: 38, 3: 41, 6: 43, 8: 45, 9: 43, 11: 41 },
+  { 0: 33, 2: 33, 3: 36, 6: 38, 8: 36, 9: 33, 11: 34 },
+  { 0: 38, 3: 36, 5: 38, 6: 41, 9: 38, 10: 36, 11: 33 },
+];
+const RIFF_ORDER = [0, 1, 0, 2, 0, 1, 3, 2];
+function musicOut() {
+  if (!music.gain) {
+    music.gain = actx.createGain(); music.gain.gain.value = 0;
+    music.gain.connect(actx.destination);
+    const len = actx.sampleRate;
+    music.noise = actx.createBuffer(1, len, actx.sampleRate);
+    const d = music.noise.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  }
+  return music.gain;
+}
+function env(gn, t, vol, attack, decay) {
+  gn.gain.setValueAtTime(0.0001, t);
+  gn.gain.exponentialRampToValueAtTime(vol, t + attack);
+  gn.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+}
+function mNoise(t, dur, vol, type, freq, q = 1) {
+  const src = actx.createBufferSource(), f = actx.createBiquadFilter(), gn = actx.createGain();
+  src.buffer = music.noise; f.type = type; f.frequency.value = freq; f.Q.value = q;
+  env(gn, t, vol, 0.002, dur);
+  src.connect(f).connect(gn).connect(musicOut());
+  src.start(t, Math.random() * 0.8); src.stop(t + dur + 0.05);
+}
+function mOsc(t, freq, type, vol, attack, decay, cutoff = 0, cutoffEnd = 0) {
+  const o = actx.createOscillator(), gn = actx.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  let node = o;
+  if (cutoff) {
+    const f = actx.createBiquadFilter(); f.type = 'lowpass';
+    f.frequency.setValueAtTime(cutoff, t);
+    if (cutoffEnd) f.frequency.exponentialRampToValueAtTime(cutoffEnd, t + attack + decay);
+    node = node.connect(f);
+  }
+  env(gn, t, vol, attack, decay);
+  node.connect(gn).connect(musicOut());
+  o.start(t); o.stop(t + attack + decay + 0.05);
+  return o;
+}
+const inst = {
+  bendir(t, acc) {
+    const o = mOsc(t, 120, 'sine', 0.32 * acc, 0.003, 0.28);
+    o.frequency.exponentialRampToValueAtTime(48, t + 0.16);
+    mNoise(t, 0.08, 0.05 * acc, 'lowpass', 500);
+  },
+  tek(t, acc) { mNoise(t, 0.05, 0.1 * acc, 'bandpass', 3200, 1.4); },
+  qraqeb(t, acc) { mNoise(t, 0.035, 0.05 * acc, 'highpass', 6500); mNoise(t + 0.014, 0.03, 0.035 * acc, 'highpass', 7500); },
+  gimbri(t, midi, vol) {
+    const f = mtof(midi);
+    const a = mOsc(t, f * 1.03, 'triangle', 0.2 * vol, 0.004, 0.32);
+    a.frequency.exponentialRampToValueAtTime(f, t + 0.03);
+    mOsc(t, f, 'sawtooth', 0.07 * vol, 0.004, 0.22, 900, 250);
+  },
+  lead(t, midi, night) {
+    if (night) mOsc(t, mtof(midi), 'triangle', 0.05, 0.05, 0.55, 1800);
+    else mOsc(t, mtof(midi), 'sawtooth', 0.045, 0.004, 0.38, 3200, 600);
+  },
+  drone(t, dur) {
+    for (const m of [26, 33]) {
+      const o = actx.createOscillator(), f = actx.createBiquadFilter(), gn = actx.createGain();
+      o.type = 'sawtooth'; o.frequency.value = mtof(m);
+      f.type = 'lowpass'; f.frequency.value = 320;
+      gn.gain.setValueAtTime(0.0001, t);
+      gn.gain.exponentialRampToValueAtTime(0.022, t + 0.4);
+      gn.gain.setValueAtTime(0.022, t + dur - 0.1);
+      gn.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.4);
+      o.connect(f).connect(gn).connect(musicOut());
+      o.start(t); o.stop(t + dur + 0.45);
+    }
+  },
+};
+function makePhrase(night) {
+  const scale = night ? SCALE_NIGHT : SCALE_DAY, n = scale.length;
+  const slots = night ? [0, 3, 6, 9, 12, 15, 18] : [0, 2, 3, 5, 6, 8, 9, 12, 14, 15, 17, 18];
+  let deg = n + Math.floor(Math.random() * 3);
+  const notes = {};
+  for (const s of slots) {
+    if (Math.random() < 0.2 && s !== 0) continue;
+    deg = clamp(deg + [-2, -1, -1, 1, 1, 2][Math.floor(Math.random() * 6)], 0, n * 2);
+    notes[s] = 62 + scale[deg % n] + 12 * Math.floor(deg / n) - 12;
+  }
+  notes[21] = 62; // resolve on D
+  return notes;
+}
+function scheduleStep(step, t, m, night) {
+  const s = step % 12, bar = Math.floor(step / 12), barDur = 12 * stepDur(m);
+  const full = m > 400 || state === 'title', lead = m > 1000;
+  if (s === 0) inst.drone(t, barDur);
+  // drums
+  if (s === 0) inst.bendir(t, 1);
+  if (s === 6) inst.bendir(t, 0.8);
+  if (s === 8 && bar % 2 === 1) inst.bendir(t, 0.5);
+  if (full && (s === 3 || s === 9)) inst.tek(t, 1);
+  if (full && s === 11) inst.tek(t, 0.6);
+  if (full && !night && s % 3 !== 1) inst.qraqeb(t, s % 3 === 0 ? 1 : 0.6);
+  // gimbri
+  const riff = RIFFS[RIFF_ORDER[bar % RIFF_ORDER.length]];
+  if (riff[s] !== undefined) {
+    const note = night && riff[s] % 12 === 5 ? riff[s] + 1 : riff[s]; // F -> F# to fit hijaz
+    inst.gimbri(t, note, night ? 0.7 : 1);
+  }
+  // lead: two bars of melody, two bars of rest
+  if (lead) {
+    const pos = (bar % 4) * 12 + s;
+    if (pos === 0) music.phrase = makePhrase(night);
+    if (pos < 24 && music.phrase && music.phrase[pos] !== undefined) inst.lead(t, music.phrase[pos], night);
+  }
+}
+const stepDur = m => 60 / (96 + 30 * clamp(m / 7000, 0, 1)) / 3;
+function musicTick() {
+  if (!actx) return;
+  musicOut();
+  const want = music.on && !muted && (state === 'play' || state === 'title');
+  const target = want ? (state === 'title' ? 0.18 : 0.25) : 0;
+  if (target !== music.level) { music.gain.gain.setTargetAtTime(target, actx.currentTime, 0.25); music.level = target; }
+  if (!want) { music.nextT = 0; return; }
+  const now = actx.currentTime;
+  if (music.nextT < now) music.nextT = now + 0.05;
+  const m = g ? g.meters : 0, night = nightness > 0.6;
+  while (music.nextT < now + 0.15) {
+    scheduleStep(music.step, music.nextT, m, night);
+    music.nextT += stepDur(m);
+    music.step++;
+  }
+}
+setInterval(musicTick, 25);
+function toggleMusic() { music.on = !music.on; store.set('saghro.music', music.on); ensureAudio(); }
 
 // ---------------------------------------------------------------- state
 let state = 'title', stateT = 0;
@@ -231,6 +379,7 @@ function startGame() {
   newGame();
   state = 'play'; stateT = 0;
   pointers.clear();
+  music.step = 0;
   sfx.start();
 }
 function tryStart() {
@@ -766,6 +915,7 @@ function drawItem(it) {
 // ---------------------------------------------------------------- HUD & screens
 const pauseBtn = () => ({ x: W - 42, y: 10, w: 32, h: 32 });
 const muteBtn = () => ({ x: W - 82, y: 10, w: 32, h: 32 });
+const musicBtn = () => ({ x: W - 122, y: 10, w: 32, h: 32 });
 function drawButtons() {
   const showPause = state === 'play';
   const m = muteBtn();
@@ -778,6 +928,17 @@ function drawButtons() {
   } else {
     ctx.beginPath(); ctx.arc(m.x + 18, m.y + 16, 4, -0.9, 0.9); ctx.stroke();
     ctx.beginPath(); ctx.arc(m.x + 18, m.y + 16, 8, -0.9, 0.9); ctx.stroke();
+  }
+  const mb = musicBtn();
+  ctx.fillStyle = 'rgba(0,0,0,0.28)'; rr(mb.x, mb.y, mb.w, mb.h, 8); ctx.fill();
+  ctx.fillStyle = '#f6e3c3'; ctx.strokeStyle = '#f6e3c3'; ctx.lineWidth = 2;
+  ellipse(mb.x + 12, mb.y + 22, 4, 3, -0.4); ctx.fill();
+  ellipse(mb.x + 22, mb.y + 20, 4, 3, -0.4); ctx.fill();
+  ctx.fillRect(mb.x + 14.5, mb.y + 9, 2, 13); ctx.fillRect(mb.x + 24.5, mb.y + 7, 2, 13);
+  ctx.beginPath(); ctx.moveTo(mb.x + 15.5, mb.y + 10); ctx.lineTo(mb.x + 25.5, mb.y + 8); ctx.stroke();
+  if (!music.on || muted) {
+    ctx.strokeStyle = '#e8504a'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(mb.x + 7, mb.y + 26); ctx.lineTo(mb.x + 27, mb.y + 6); ctx.stroke();
   }
   if (showPause) {
     const b = pauseBtn();
@@ -840,7 +1001,7 @@ function drawTitle() {
     text('Hold the left side to duck.', W / 2, 176, 13, '#fff4dc');
   } else {
     text('Space / ↑ to jump. Hold for higher, press again to double-jump.', W / 2, 156, 13, '#fff4dc');
-    text('↓ to duck  ·  P to pause  ·  M for sound', W / 2, 176, 13, '#fff4dc');
+    text('↓ duck  ·  P pause  ·  M sound  ·  N music', W / 2, 176, 13, '#fff4dc');
   }
   text('Collect dates · grab water before you run dry', W / 2, 198, 12, '#f1c27d');
   text('Mint tea = a few seconds of invincibility', W / 2, 216, 12, '#ffd36b');
@@ -954,6 +1115,7 @@ window.addEventListener('keydown', e => {
   if (JUMP_KEYS.includes(e.code) || DUCK_KEYS.includes(e.code)) e.preventDefault();
   ensureAudio();
   if (e.code === 'KeyM') { toggleMute(); return; }
+  if (e.code === 'KeyN') { toggleMusic(); return; }
   if (e.code === 'KeyP' || e.code === 'Escape') { if (state === 'play') pause(); else if (state === 'paused') resume(); return; }
   if (JUMP_KEYS.includes(e.code) || e.code === 'Enter') {
     if (e.repeat) return;
@@ -977,6 +1139,7 @@ cvs.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'mouse') isTouch = true;
   const pt = toLogical(e);
   if (inBtn(pt, muteBtn())) { toggleMute(); return; }
+  if (inBtn(pt, musicBtn())) { toggleMusic(); return; }
   if (state === 'play' && inBtn(pt, pauseBtn())) { pause(); return; }
   if (state === 'title' || state === 'over') { tryStart(); return; }
   if (state === 'paused') { resume(); return; }
