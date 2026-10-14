@@ -31,6 +31,33 @@ Everything is in `index.html`: no network, no dependencies, no build step.
 
 Your best score is saved in the browser.
 
+## Saghro Trek 3D (spinoff)
+
+An over-the-shoulder 3D version of the same trek is in `3d/index.html`. The camera runs just
+behind your hiker's right shoulder on a three-lane trail that curves and climbs through the
+same regions, waypoints, day/night cycle and music. Like the original it is one file with
+no dependencies. The 3D is drawn on a plain 2D canvas, so it runs on older phones too.
+
+| | Keyboard | Touch |
+|---|---|---|
+| Change lane | ← / → (A / D) | Swipe left / right |
+| Jump (hold = higher) | Space / ↑ / W | Tap, or swipe up |
+| Double jump | Press again in mid-air | Tap again |
+| Slide / fast-fall | ↓ / S | Swipe down |
+| Pause · sound · music | P · M · N | Buttons, top right |
+
+- **Rocks, scrub and scorpions** can be jumped.
+- **Rock towers** fill a lane and are too tall to jump, so switch lanes. Sometimes two lanes
+  are blocked at once.
+- **Ravens** fly at head height, straight at you. Slide under them.
+- **Goats** stand still until you get close, then charge down their lane.
+- **Fallen palm trunks** block every lane. Jump them.
+- Water, dates, mint tea, hearts and waypoint bonuses work as in the original. Your best 3D
+  score is saved separately.
+
+On GitHub Pages it's at `https://<user>.github.io/Offline-Games/3d/`. The same service worker
+caches it, so it also works offline, and it can be added to the home screen on its own.
+
 ## Getting it onto a device before the flight
 
 - **Laptop:** download `index.html` and open it in any browser. It works fully offline.
