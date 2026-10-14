@@ -1,7 +1,8 @@
 // Bump CACHE whenever a cached file changes so installed copies update.
 // Cache-first service worker so the game keeps working with no connection.
-const CACHE = 'saghro-trek-v2';
-const FILES = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-512.png'];
+const CACHE = 'saghro-trek-v3';
+const FILES = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-512.png',
+  './3d/', './3d/index.html', './3d/manifest.webmanifest'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
